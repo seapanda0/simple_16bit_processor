@@ -66,7 +66,7 @@ module bus_multiplexer(
             4'd6: multiplex_out = cpu_reg[6];
             4'd7: multiplex_out = cpu_reg[7];
             4'd8: multiplex_out = din_extended;
-            4'd10: multiplex_out = reg_G;
+            4'd9: multiplex_out = reg_G;
             default: multiplex_out = 16'd0;
         endcase
         
