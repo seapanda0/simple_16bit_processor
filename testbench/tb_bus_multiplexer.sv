@@ -33,13 +33,13 @@ module tb_bus_multiplexer();
 
         #1;
 
-        repeat(25fkkf) begin
+        repeat(25) begin
             assert(rand_mux.randomize());
             mux_in = rand_mux.data_16x10;
             sel = rand_mux.sel;
-            expected_mux_out = mux_in[sel];
-            #1; // Send the data to uu;
 
+            expected_mux_out = mux_in[sel];
+            #1; // Send the data to uut;
 
             if (expected_mux_out !== mux_out) begin
                 $display("[ERROR] SEL : %2d | EXPECTED OUT : %5d | OUT : %5d",

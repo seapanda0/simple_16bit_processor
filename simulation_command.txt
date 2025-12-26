@@ -1,1 +1,1 @@
-vlog testbench/tb_bus_multiplexer.sv && vsim -c work.tb_bus_multiplexer -wlf "waveform/tb_bus_multiplexer.wlf" -voptargs=+acc -do modelsim_run.do
+vlog testbench/tb_register_n.sv && vsim -c work.tb_register_n -wlf "waveform/tb_register_n.wlf" -voptargs=+acc -do modelsim_run.do
