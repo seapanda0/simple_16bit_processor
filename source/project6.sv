@@ -31,6 +31,14 @@ module project6(
         MOV_I = 3'b111
     } opcode_t;
 
+    typedef enum logic [2:0] {
+        ALU_ADD = 3'b000,
+        ALU_SUB = 3'b001,
+        ALU_MUL = 3'b010,
+        ALU_RR = 3'b011,
+        ALU_RL = 3'b100
+    }alu_op_t;
+
     // EXTERNAL CONNECTIONS
     // to be assigned to fpga pins
     logic clk, rst;
@@ -50,11 +58,14 @@ module project6(
     logic [15:0] REG_READ_BUS [7:0]; // For reg0-7
     logic [15:0] REG_G_WRITE_BUS; // Reg G stores output of ALU
     logic [15:0] REG_G_READ_BUS; // Reg G stores output of ALU
+    logic [15:0] REG_A_READ_BUS; // Reg A connected to input of ALU
 
     // CONTROL SIGNALS
     logic [3:0] BUS_MUX_SEL;
     logic [7:0] REG_BANK_WRITE; // assert to write to reg 0-7
-    logic REG_H_WRITE, REG_G_WRITE; // assert to write to G and H
+    logic REG_A_WRITE, REG_H_WRITE, REG_G_WRITE; // assert to write to G and H    
+    // newly added
+    logic [2:0] ALU_OP;
     
     /* TICK FSM */
     logic [3:0] tick;
@@ -71,7 +82,6 @@ module project6(
 
     /*******************REGISTERS START********************/
     // Generate 8 registers
-
     genvar i;
     generate
         for (i = 0; i <= 7; i++) begin : reg_bank
@@ -84,6 +94,15 @@ module project6(
             );
         end
     endgenerate
+
+    // Stores one of the inputs of ALU
+    register_n #(16) REG_A(
+        .clk(clk),
+        .rst(rst),
+        .r_in(REG_A_WRITE),
+        .data_in(REG_WRITE_BUS),
+        .q(REG_A_READ_BUS)
+    );
 
     // Stores computational result
     register_n #(16) REG_G(
@@ -112,11 +131,22 @@ module project6(
     bus_multiplexer BUS_MUX_INST (
         .cpu_reg(REG_READ_BUS),
         .din_extended(din_extended),
-        .reg_G(reg_G_out),
+        .reg_G(REG_G_READ_BUS),
         .sel(BUS_MUX_SEL),
         .multiplex_out(REG_WRITE_BUS)
     );
     /*****************MULTIPLEXER END********************/
+
+    /********************ALU START***********************/
+
+    alu ALU_INST (
+        .a(REG_A_READ_BUS),
+        .b(REG_WRITE_BUS),
+        .alu_op(ALU_OP),
+        .result(REG_G_WRITE_BUS)
+    );
+
+    /********************ALU END*************************/
 
     always_ff @(posedge clk) begin
         if (rst) IR <= '0;
@@ -128,7 +158,7 @@ module project6(
 
             /* FETCH */
             4'b0001 : begin
-                BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;
+                BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0; REG_A_WRITE = 0; ALU_OP = '0;
             end
 
             /* DECODE */
@@ -137,27 +167,41 @@ module project6(
                     DISP : begin
                        BUS_MUX_SEL = IR[5:3]; // Change bus to select the register to read from
                        REG_H_WRITE = 1'b1; // Select H to be written
-                       REG_G_WRITE = '0; REG_BANK_WRITE = '0;
+                       REG_G_WRITE = '0; REG_BANK_WRITE = '0; REG_A_WRITE = '0; ALU_OP = '0;
                     end
                     MOV_I : begin
                         BUS_MUX_SEL = 4'd8; // Change bus to select din to read from
                         REG_BANK_WRITE = '0;
                         REG_BANK_WRITE[IR[5:3]] = 1'b1; //Select the register to be written
-                        REG_H_WRITE = '0; REG_G_WRITE = '0;
+                        REG_H_WRITE = '0; REG_G_WRITE = '0; REG_A_WRITE = '0; ALU_OP = '0;
+                    end
+                    ADD : begin
+                        // Load first operand (Rx) to reg A
+                        BUS_MUX_SEL = IR[5:3]; // Change bus to select the register (Rx) to read from
+                        REG_A_WRITE = '1;
+                        ALU_OP = ALU_ADD;
+                        REG_G_WRITE = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; ALU_OP = '0;
                     end
                     default: begin
-                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;
+                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0; REG_A_WRITE = 0; ALU_OP = '0;
                     end
                 endcase
             end
 
+            /* EXECUTE */
             4'b0100 : begin
                 case (IR[8:6])
                     DISP, MOV_I : begin
-                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;                
+                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0; REG_A_WRITE = 0; ALU_OP = '0;
+                    end
+                    ADD : begin
+                        BUS_MUX_SEL = IR[2:0]; // Change the input of the second operand of ALU to Ry
+                        ALU_OP = ALU_ADD; // Set ALU_ADD control signal
+                        REG_G_WRITE = '1; // Store result in register G
+                        REG_A_WRITE = '0; REG_H_WRITE = '0; REG_BANK_WRITE = '0;
                     end
                     default : begin
-                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;                
+                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0; REG_A_WRITE = 0; ALU_OP = '0;
                     end
                 endcase
             end
@@ -165,15 +209,22 @@ module project6(
             4'b1000 : begin
                 case (IR[8:6])                    
                     DISP, MOV_I : begin
-                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;
+                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0; REG_A_WRITE = 0; ALU_OP = '0;
+                    end
+                    ADD : begin
+                        // Rx = Rx + Ry
+                        BUS_MUX_SEL = 4'd9; // Select reg G
+                        REG_BANK_WRITE = '0;
+                        REG_BANK_WRITE[IR[5:3]] = 1'b1; // Select RX as the register to write to
+                        REG_A_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0; ALU_OP = '0;
                     end
                     default : begin
-                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;                
+                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0; REG_A_WRITE = 0; ALU_OP = '0;
                     end            
                 endcase
             end
             default: begin
-                BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;
+                BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0; REG_A_WRITE = 0; ALU_OP = '0;
             end
         endcase
     end
