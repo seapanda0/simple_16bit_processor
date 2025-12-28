@@ -44,9 +44,17 @@ module project6(
 
     // PROCESSOR COMPONENTS
     logic [8:0] IR; // Instruction register
+
+    // DATA BUSES
     logic [15:0] REG_WRITE_BUS; // Shared for reg0-7, A and H
     logic [15:0] REG_READ_BUS [7:0]; // For reg0-7
+    logic [15:0] REG_G_WRITE_BUS; // Reg G stores output of ALU
+    logic [15:0] REG_G_READ_BUS; // Reg G stores output of ALU
+
+    // CONTROL SIGNALS
     logic [3:0] BUS_MUX_SEL;
+    logic [7:0] REG_BANK_WRITE; // assert to write to reg 0-7
+    logic REG_H_WRITE, REG_G_WRITE; // assert to write to G and H
     
     /* TICK FSM */
     logic [3:0] tick;
@@ -63,7 +71,6 @@ module project6(
 
     /*******************REGISTERS START********************/
     // Generate 8 registers
-    logic [7:0] r_in;
 
     genvar i;
     generate
@@ -71,24 +78,20 @@ module project6(
             register_n #(16) REG_I(
                 .clk(clk),
                 .rst(rst),
-                .r_in(r_in[i]),
+                .r_in(REG_BANK_WRITE[i]),
                 .data_in(REG_WRITE_BUS),
                 .q(REG_READ_BUS[i])
             );
         end
     endgenerate
 
-    logic r_in_H, r_in_G;
-    logic [15:0] reg_G_in; 
-    logic [15:0] reg_G_out;
-
     // Stores computational result
     register_n #(16) REG_G(
         .clk(clk),
         .rst(rst),
-        .r_in(r_in_G),
-        .data_in(reg_G_in),
-        .q(reg_G_out)
+        .r_in(REG_G_WRITE),
+        .data_in(REG_G_WRITE_BUS),
+        .q(REG_G_READ_BUS)
     );
 
     // Used for display and output purpose
@@ -96,7 +99,7 @@ module project6(
     register_n #(16) REG_H(
         .clk(clk),
         .rst(rst),
-        .r_in(r_in_H),
+        .r_in(REG_H_WRITE),
         .data_in(REG_WRITE_BUS),
         .q(reg_H_out)
     );
@@ -115,57 +118,64 @@ module project6(
     );
     /*****************MULTIPLEXER END********************/
 
-    always_ff @( posedge clk ) begin : control_unit
+    always_ff @(posedge clk) begin
+        if (rst) IR <= '0;
+        else if (tick[0] == 1'b1) IR <= din;
+    end
+
+    always_comb begin : control_unit
         case (tick)
+
             /* FETCH */
             4'b0001 : begin
-                IR <= din;
-
-                case (din[8:6])
-                    DISP : begin
-                        BUS_MUX_SEL <= din[5:3]; // Change bus to select the register to read from
-                        r_in_H <= 1'b1; // Select H to be written
-                    end
-                    MOV_I : begin
-                        BUS_MUX_SEL <= 4'd8; // Change bus to select din to read from
-                        r_in[din[5:3]] <= 1'b1; //Select the register to be written
-                    end
-                    default: ;
-                endcase
+                BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;
             end
 
             /* DECODE */
-            4'b0010: begin
+            4'b0010 : begin
                 case (IR[8:6])
                     DISP : begin
-
-                    end
-                    MOV_I: begin
-                    end
-                    default: ;
-                endcase                
-            end 
-            
-            4'b0100: begin
-                case (IR[8:6])
-                    DISP : begin
-                        BUS_MUX_SEL <= 4'h0;
-                        r_in_H <= 1'b0;
+                       BUS_MUX_SEL = IR[5:3]; // Change bus to select the register to read from
+                       REG_H_WRITE = 1'b1; // Select H to be written
+                       REG_G_WRITE = '0; REG_BANK_WRITE = '0;
                     end
                     MOV_I : begin
-                        BUS_MUX_SEL <= 4'h0;
-                        r_in[IR[5:3]] <= 1'b0;
+                        BUS_MUX_SEL = 4'd8; // Change bus to select din to read from
+                        REG_BANK_WRITE = '0;
+                        REG_BANK_WRITE[IR[5:3]] = 1'b1; //Select the register to be written
+                        REG_H_WRITE = '0; REG_G_WRITE = '0;
                     end
-                    default: ;
-                endcase   
+                    default: begin
+                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;
+                    end
+                endcase
             end
-            4'b1000: begin
+
+            4'b0100 : begin
                 case (IR[8:6])
-                    DISP : ;
-                    default: ;
-                endcase 
+                    DISP, MOV_I : begin
+                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;                
+                    end
+                    default : begin
+                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;                
+                    end
+                endcase
             end
-        endcase    
+
+            4'b1000 : begin
+                case (IR[8:6])                    
+                    DISP, MOV_I : begin
+                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;
+                    end
+                    default : begin
+                        BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;                
+                    end            
+                endcase
+            end
+            default: begin
+                BUS_MUX_SEL = '0; REG_BANK_WRITE = '0; REG_H_WRITE = '0; REG_G_WRITE = '0;
+            end
+        endcase
     end
 
     /* IO Connections */
