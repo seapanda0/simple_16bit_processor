@@ -11,22 +11,24 @@
 */
 
 module project6(
-    input wire logic [7:0] SW,
+    input wire logic [8:0] SW,
     input wire logic [4:0] KEY,
-    input wire logic [6:0] HEX0,
-    input wire logic [6:0] HEX1,
-    input wire logic [6:0] HEX2,
-    input wire logic [6:0] HEX3
+    output logic [6:0] HEX0,
+    output logic [6:0] HEX1,
+    output logic [6:0] HEX2,
+    output logic [6:0] HEX3,
+    output logic [6:0] HEX4,
+    output logic [1:0] LEDR
 );
     typedef enum logic [2:0] {
-        DISP = 3'b000,
-        ADD = 3'b001,
-        ADD_IMMEDIATE = 3'b010,
-        SUB = 3'b011,
-        MUL = 3'b100,
-        SRL = 3'b101,
-        SLL = 3'b110,
-        MOV_IMMEDIATE = 3'b111
+        DISP  = 3'b000,
+        ADD   = 3'b001,
+        ADD_I = 3'b010,
+        SUB   = 3'b011,
+        MUL   = 3'b100,
+        SRL   = 3'b101,
+        SLL   = 3'b110,
+        MOV_I = 3'b111
     } opcode_t;
 
     // EXTERNAL CONNECTIONS
@@ -34,6 +36,11 @@ module project6(
     logic clk, rst;
     logic [8:0] din;
     logic tick_ena;
+
+    assign clk = KEY[0];
+    assign rst = ~KEY[1];
+    assign tick_ena = '1;
+    assign din = SW;
 
     // PROCESSOR COMPONENTS
     logic [8:0] IR; // Instruction register
@@ -113,14 +120,27 @@ module project6(
             /* FETCH */
             4'b0001 : begin
                 IR <= din;
+
+                case (din[8:6])
+                    DISP : begin
+                        BUS_MUX_SEL <= din[5:3]; // Change bus to select the register to read from
+                        r_in_H <= 1'b1; // Select H to be written
+                    end
+                    MOV_I : begin
+                        BUS_MUX_SEL <= 4'd8; // Change bus to select din to read from
+                        r_in[din[5:3]] <= 1'b1; //Select the register to be written
+                    end
+                    default: ;
+                endcase
             end
 
             /* DECODE */
             4'b0010: begin
                 case (IR[8:6])
                     DISP : begin
-                        BUS_MUX_SEL <= IR[5:3];
-                        r_in_H <= '1; 
+
+                    end
+                    MOV_I: begin
                     end
                     default: ;
                 endcase                
@@ -129,7 +149,12 @@ module project6(
             4'b0100: begin
                 case (IR[8:6])
                     DISP : begin
-                        r_in_H <= '0;
+                        BUS_MUX_SEL <= 4'h0;
+                        r_in_H <= 1'b0;
+                    end
+                    MOV_I : begin
+                        BUS_MUX_SEL <= 4'h0;
+                        r_in[IR[5:3]] <= 1'b0;
                     end
                     default: ;
                 endcase   
@@ -143,9 +168,11 @@ module project6(
         endcase    
     end
 
-    /* IO COnnections */
+    /* IO Connections */
     binary_to_7seg h0 (reg_H_out[3:0], HEX0);
     binary_to_7seg h1 (reg_H_out[7:4], HEX1);
     binary_to_7seg h2 (reg_H_out[11:8], HEX2);
     binary_to_7seg h3 (reg_H_out[15:12], HEX3);
+
+    fsm_tick_to_7seg h4 (tick, HEX4);
 endmodule
