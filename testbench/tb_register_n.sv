@@ -52,5 +52,4 @@ module tb_register_n();
 
         $finish;
     end
-
 endmodule
